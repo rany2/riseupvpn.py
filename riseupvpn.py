@@ -6,10 +6,6 @@
 
 # To use with Calyx, run with "--geoip-url none" and "--provider-url https://calyx.net/provider.json"
 
-# TODO: Allow blacklist/whitelist for regions instead of the following which blacklists France and Netherlands. For example:
-# sudo ./riseupvpn.py -g "$(for x in $(./riseupvpn.py -l| egrep -v '^(FR|NL) '|awk '{print $NF}'); do echo -n "$x "; done)"
-# Having it built in also means we could still use GeoIP data, which is neat and means faster connections.
-
 import io
 import os
 import re
@@ -26,6 +22,9 @@ if __name__ != "__main__": sys.exit(1)
 
 # Options
 parser = argparse.ArgumentParser(description="RiseupVPN Python Edition")
+group = parser.add_mutually_exclusive_group()
+group.add_argument('-b', '--blacklist', help='blacklists country (delimited by space)')
+group.add_argument('-w', '--whitelist', help='whitelists country (delimited by space)')
 parser.add_argument('-g', '--gateway', help='which gateway to use (delimited by space) (default use GeoIP, if GeoIP unavailable uses json order of eip)')
 parser.add_argument('-l', '--list-gateway', help='lists gateways available', action='store_true')
 parser.add_argument('-G', '--geoip-url', help='sets geoip-url (to unset, use none) (default https://api.black.riseup.net:9001/json)', default='https://api.black.riseup.net:9001/json')
@@ -123,6 +122,14 @@ for gateway in gateways:
                     ports = x['capabilities']['ports'][y]
                     proto = x['capabilities']['protocols'][y]
                     hasOVPN = True
+            if (args.blacklist or args.whitelist) is not None:
+                country = eip_service['locations'][x['location']]['country_code']
+                if args.blacklist is not None:
+                    for y in args.blacklist.split(" "):
+                        if y == country: hasOVPN = False
+                if args.whitelist is not None:
+                    for y in args.whitelist.split(" "):
+                        if y != country: hasOVPN = False
             if hasOVPN: ovpn_config += [ '--remote', x['ip_address'], ports, proto ]
             if gateway != "none": break
 
