@@ -1,8 +1,12 @@
 [Unit]
 Description=RiseupVPN Python
 After=network.target network-online.target
+StartLimitBurst=0
+StartLimitIntervalSec=0
 
 [Service]
+Restart=always
+RestartSec=1s
 User=nobody
 ExecStart=riseupvpn.py --dont-drop
 PrivateTmp=true
