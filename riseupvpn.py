@@ -72,12 +72,12 @@ def get_no_group_name():
 
 # Get list of gateways to be used (based on GeoIP, eip order, or specified by user)
 if args.gateway is not None:
-	gateways = args.gateway.split(" ")
+    gateways = args.gateway.split(" ")
 elif args.geoip_url != "none":
-	r = requests.get(args.geoip_url, verify=ca_file.name)
-	gateways = json.loads(r.content)['gateways']
+    r = requests.get(args.geoip_url, verify=ca_file.name)
+    gateways = json.loads(r.content)['gateways']
 else:
-	gateways = ['none']
+    gateways = ['none']
 
 # Grab EIP Service JSON
 r = requests.get(apiUrl + "/config/eip-service.json", verify=ca_file.name)
@@ -108,15 +108,13 @@ for x in eip_service['openvpn_configuration']:
 # Blacklist/Whitelist detection function
 def blacklist_check(x, y):
     if (args.blacklist or args.whitelist) is not None:
-        country = eip_service['locations'][x['location']]['country_code']
+        country = eip_service['locations'][x['location']]['country_code'].lower()
         if args.blacklist is not None:
             for y in args.blacklist.split(" "):
-                if y == country:
-                    return False
+                if y.lower() == country: return False
         if args.whitelist is not None:
             for y in args.whitelist.split(" "):
-                if y != country:
-                    return False
+                if y.lower() != country: return False
     return True
 
 # Append OpenVPN configuration for remote
