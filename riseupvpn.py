@@ -25,7 +25,7 @@ parser.add_argument('-g', '--gateway', help='which gateway to use (delimited by 
 parser.add_argument('-l', '--list-gateway', help='lists gateways available', action='store_true')
 parser.add_argument('-G', '--geoip-url', help='sets geoip-url (to unset, use none) (default https://api.black.riseup.net:9001/json)', default='https://api.black.riseup.net:9001/json')
 parser.add_argument('-a', '--provider-url', help='sets provider url (default https://black.riseup.net/provider.json)', default="https://black.riseup.net/provider.json")
-parser.add_argument('-R', '--run-as-root', help='run as root instead of nobody', action='store_true')
+parser.add_argument('-R', '--dont-drop', help="don\'t drop OpenVPN to nobody user", action='store_true')
 args = parser.parse_args()
 
 # Handle cleanup
@@ -238,7 +238,7 @@ ovpn_config += [
     "--verb", "3", # needed to get current device name
     "--block-ipv6" # to workaround broken git, ssh, etc.
 ]
-if not args.run_as_root:
+if not args.dont_drop:
     ovpn_config += [ "--user", "nobody" ]
     no_group = get_no_group_name()
     if no_group is not None: ovpn_config += [ '--group', no_group ]
