@@ -4,8 +4,10 @@ import io
 import os
 import re
 import sys
+import grp
 import json
 import atexit
+import socket
 import argparse
 import requests
 import tempfile
@@ -39,7 +41,7 @@ def cleanup():
     if "openvpn" in globals():
         openvpn.terminate()
         try:
-            openvpn.wait(timeout=3)
+            openvpn.wait(timeout=1)
         except subprocess.TimeoutExpired:
             openvpn.kill()
 atexit.register(cleanup)
@@ -58,7 +60,6 @@ ca_file.close()
 # Get proper group for nobody
 # https://0xacab.org/leap/bitmask-vpn/-/blob/main/helpers/bitmask-root#L62
 def get_no_group_name():
-    import grp
     try:
         grp.getgrnam('nobody')
         return 'nobody'
@@ -68,6 +69,15 @@ def get_no_group_name():
             return 'nogroup'
         except KeyError:
             return None
+
+# Make sure IP address is valid
+# https://0xacab.org/leap/bitmask-vpn/-/blob/main/helpers/bitmask-root#L208
+def is_valid_address(value):
+    try:
+        socket.inet_aton(value)
+        return True
+    except Exception:
+        return False
 
 # Get list of gateways to be used (based on GeoIP, eip order, or specified by user)
 if args.gateway is not None:
@@ -160,7 +170,58 @@ for line in r.text.split('\n'):
             public_line = False
             public_key.close()
 
-# Finalize OpenVPN configuration
+# Verify if server isn't doing something malicious and finalize OpenVPN configuration
+# Source for verify: https://0xacab.org/leap/bitmask-vpn/-/blob/main/helpers/bitmask-root#L140
+ALLOWED_FLAGS = {
+    "--remote": ["IP", "NUMBER", "PROTO"],
+    "--tls-cipher": ["CIPHER"],
+    "--cipher": ["CIPHER"],
+    "--auth": ["CIPHER"],
+    "--keepalive": ["NUMBER", "NUMBER"],
+    "--tun-ipv6": [],
+    "--block-ipv6": [] # If https://0xacab.org/leap/container-platform/lilypad/-/issues/39 gets approved.
+}
+PARAM_FORMATS = {
+    "NUMBER": lambda s: re.match("^\d+$", s),
+    "PROTO": lambda s: re.match("^(tcp|udp|tcp4|udp4)$", s),
+    "IP": lambda s: is_valid_address(s),
+    "CIPHER": lambda s: re.match("^[A-Z0-9-]+$", s)
+}
+ovpn_config_new = []
+notice_shown = None
+fail_after_parse = False
+for x in ovpn_config:
+    if x.startswith("--"):
+        y = x # current option
+        a = 0
+    if y in ALLOWED_FLAGS.keys():
+        if x == y:
+            ovpn_config_new.append(x)
+        else:
+            try:
+                match = PARAM_FORMATS[ALLOWED_FLAGS[y][a]](x)
+            except:
+                match = False
+            if match:
+                ovpn_config_new.append(x)
+            else:
+                if notice_shown != x:
+                    print("ERROR: FORBIDDEN PARAM OPTION %s ON %s PARAM %s!" % (x, a, y))
+                    notice_shown = x
+                    fail_after_parse = True
+            a += 1
+    else:
+        if notice_shown != y:
+            print("ERROR: FORBIDDEN PARAM %s!" % (y))
+            notice_shown = y
+            fail_after_parse = True
+if fail_after_parse:
+    print("ERROR: FOR YOUR OWN SAFETY, THIS SCRIPT WILL ABORT!")
+    sys.exit(1)
+else:
+    ovpn_config = ovpn_config_new
+    del ovpn_config_new
+
 ovpn_config += [
     "--nobind",
     "--client",
