@@ -12,6 +12,7 @@ import argparse
 import requests
 import tempfile
 import subprocess
+import distutils.spawn
 
 # Quit with error if called as a module
 if __name__ != "__main__": sys.exit(1)
@@ -27,6 +28,21 @@ parser.add_argument('-G', '--geoip-url', help='sets geoip-url (to unset, use non
 parser.add_argument('-a', '--provider-url', help='sets provider url (default https://black.riseup.net/provider.json)', default="https://black.riseup.net/provider.json")
 parser.add_argument('-R', '--dont-drop', help="don\'t drop OpenVPN to nobody user", action='store_true')
 args = parser.parse_args()
+
+# Check for dependencies
+unsatisfied_dependency = False
+def which(x):
+    result = distutils.spawn.find_executable(x)
+    if result is not None:
+        return result
+    else:
+        return False
+for program in ['openvpn','resolvconf']:
+    if not which(program):
+        print ("ERROR: %s REQUIRED FOR THIS SCRIPT. PLEASE INSTALL IT!" % program)
+        unsatisfied_dependency = True
+if unsatisfied_dependency:
+    sys.exit(1)
 
 # Handle cleanup
 def cleanup():
