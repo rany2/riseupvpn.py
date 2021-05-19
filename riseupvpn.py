@@ -205,16 +205,16 @@ for x in ovpn_config:
             if match:
                 ovpn_config_new.append(x)
             else:
+                fail_after_parse = True
                 if notice_shown != x:
                     print("ERROR: FORBIDDEN PARAM OPTION %s ON %s PARAM %s!" % (x, a, y))
                     notice_shown = x
-                    fail_after_parse = True
             a += 1
     else:
+        fail_after_parse = True
         if notice_shown != y:
             print("ERROR: FORBIDDEN PARAM %s!" % (y))
             notice_shown = y
-            fail_after_parse = True
 if fail_after_parse:
     print("ERROR: FOR YOUR OWN SAFETY, THIS SCRIPT WILL ABORT!")
     sys.exit(1)
