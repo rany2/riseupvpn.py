@@ -5,7 +5,7 @@ import os
 import re
 import sys
 import json
-import signal
+import atexit
 import argparse
 import requests
 import tempfile
@@ -14,7 +14,7 @@ import subprocess
 # Quit with error if called as a module
 if __name__ != "__main__": sys.exit(1)
 
-# Options
+# Parse options
 parser = argparse.ArgumentParser(description="RiseupVPN Python Edition")
 group = parser.add_mutually_exclusive_group()
 group.add_argument('-b', '--blacklist', help='blacklists country (delimited by space)')
@@ -25,26 +25,19 @@ parser.add_argument('-G', '--geoip-url', help='sets geoip-url (to unset, use non
 parser.add_argument('-a', '--provider-url', help='sets provider url (default https://black.riseup.net/provider.json)', default="https://black.riseup.net/provider.json")
 args = parser.parse_args()
 
-# Handle signal/cleanup
-def terminator(signo, stack_frame, auto=True):
+# Handle cleanup
+def cleanup():
     # Delete temporary files
-    os.unlink(ca_file.name)
-    os.unlink(public_key.name)
-    os.unlink(private_key.name)
+    if "ca_file" in globals() and ca_file.name is not None: os.unlink(ca_file.name)
+    if "public_key" in globals() and public_key.name is not None: os.unlink(public_key.name)
+    if "private_key" in globals() and private_key.name is not None: os.unlink(private_key.name)
 
     # If tundev is set we remove resolvconf entry
-    if tundev is not None: subprocess.Popen(["resolvconf", "-d", tundev], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if "tundev" in globals(): subprocess.Popen(["resolvconf", "-d", tundev], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    # Exit everything if executed by signal
-    if auto: sys.exit()
-
-# Make temporary files, set needed variables, and capture signals
-ca_file = tempfile.NamedTemporaryFile(delete=False)
-private_key = tempfile.NamedTemporaryFile(delete=False)
-public_key = tempfile.NamedTemporaryFile(delete=False)
-tundev = None
-signal.signal(signal.SIGINT, terminator)
-signal.signal(signal.SIGTERM, terminator)
+    # If OpenVPN was started
+    if "openvpn" in globals(): openvpn.terminate()
+atexit.register(cleanup)
 
 # Get API certificate for RiseupVPN
 r = requests.get(args.provider_url)
@@ -53,6 +46,7 @@ cacertURL = provider['ca_cert_uri']
 apiUrl = provider['api_uri'] + '/' + provider['api_version']
 apiVersion = provider['api_version']
 r = requests.get(cacertURL)
+ca_file = tempfile.NamedTemporaryFile(delete=False)
 ca_file.write(r.content)
 ca_file.close()
 
@@ -95,7 +89,7 @@ if args.list_gateway:
         for x in sorted(gw_list): print(x)
     else:
         print("apiVersion %s is not supported for --list-gateway" % apiVersion)
-    terminator(0, 0)
+    sys.exit()
 
 # Make OpenVPN cmdline
 ovpn_config = []
@@ -143,6 +137,8 @@ for gateway in gateways:
 
 # Get OVPN certificates and private keys
 r = requests.get(apiUrl + "/cert", verify=ca_file.name)
+private_key = tempfile.NamedTemporaryFile(delete=False)
+public_key = tempfile.NamedTemporaryFile(delete=False)
 private_line = False
 public_line = False
 for line in r.text.split('\n'):
@@ -166,7 +162,6 @@ ovpn_config += [
     "--dev", "tun",
     "--tls-client",
     "--remote-cert-tls", "server",
-#    "--management-signal",
     "--script-security", "0",
     "--user", "nobody",
     "--persist-key",
@@ -187,9 +182,8 @@ for line in io.TextIOWrapper(openvpn.stdout, encoding="utf-8"):
         tundev = re.findall("TUN/TAP device ([\S]*) opened", line)[0]
     except:
         pass
-    if tundev != None:
+    if "tundev" in globals() and tundev is not None:
         resolvconf = subprocess.Popen(["resolvconf", "-x", "-a", tundev], stdout=subprocess.DEVNULL, stdin=subprocess.PIPE)
         resolvconf.communicate(input=b'nameserver 10.41.0.1\nnameserver 10.42.0.1\n')
         break
 openvpn.wait()
-terminator(0, 0)
