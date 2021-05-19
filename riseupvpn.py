@@ -36,7 +36,12 @@ def cleanup():
     if "tundev" in globals(): subprocess.Popen(["resolvconf", "-d", tundev], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # If OpenVPN was started
-    if "openvpn" in globals(): openvpn.terminate()
+    if "openvpn" in globals():
+        openvpn.terminate()
+        try:
+            openvpn.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            openvpn.kill()
 atexit.register(cleanup)
 
 # Get API certificate for RiseupVPN
