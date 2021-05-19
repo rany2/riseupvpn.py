@@ -35,14 +35,12 @@ def which(x):
     result = distutils.spawn.find_executable(x)
     if result is not None:
         return result
-    else:
-        return False
+    return False
 for program in ['openvpn','resolvconf']:
     if not which(program):
-        print ("ERROR: %s REQUIRED FOR THIS SCRIPT. PLEASE INSTALL IT!" % program)
+        print ("Error: %s is required for this script. Please install it!" % program, file=sys.stderr)
         unsatisfied_dependency = True
-if unsatisfied_dependency:
-    sys.exit(1)
+if unsatisfied_dependency: sys.exit(1)
 
 # Handle cleanup
 def cleanup():
@@ -67,12 +65,13 @@ atexit.register(cleanup)
 r = requests.get(args.provider_url)
 provider = json.loads(r.content)
 cacertURL = provider['ca_cert_uri']
-apiUrl = provider['api_uri'] + '/' + provider['api_version']
 apiVersion = provider['api_version']
+apiUrl = provider['api_uri'] + '/' + apiVersion
 r = requests.get(cacertURL)
 ca_file = tempfile.NamedTemporaryFile(delete=False)
 ca_file.write(r.content)
 ca_file.close()
+print ("Info: retrieved API certificate", file=sys.stderr)
 
 # Get proper group for nobody
 # https://0xacab.org/leap/bitmask-vpn/-/blob/main/helpers/bitmask-root#L62
@@ -102,12 +101,14 @@ if args.gateway is not None:
 elif args.geoip_url != "none":
     r = requests.get(args.geoip_url, verify=ca_file.name)
     gateways = json.loads(r.content)['gateways']
+    print ("Info: retrieved gateway list based on GeoIP preference", file=sys.stderr)
 else:
     gateways = ['none']
 
 # Grab EIP Service JSON
 r = requests.get(apiUrl + "/config/eip-service.json", verify=ca_file.name)
 eip_service = json.loads(r.content)
+print ("Info: retrieved EIP Service JSON", file=sys.stderr)
 if args.list_gateway:
     if apiVersion == "3":
         gw_list = []
@@ -118,9 +119,9 @@ if args.list_gateway:
                     gw_list += [ "%s %s %s" % (eip_service['locations'][x['location']]['country_code'], x['location'], x['host']) ]
                 except: # if the eip-service.json doesn't have locations (calyx)
                     gw_list += [ "%s" % (x['host']) ]
-        for x in sorted(gw_list): print(x)
+        for x in sorted(gw_list): print (x)
     else:
-        print("apiVersion %s is not supported for --list-gateway" % apiVersion)
+        print ("Error: apiVersion %s is not supported for --list-gateway" % apiVersion, file=sys.stderr)
     sys.exit()
 
 # Make OpenVPN cmdline
@@ -166,27 +167,6 @@ for gateway in gateways:
                     proto = x['capabilities']['protocols'][y]
                     if blacklist_check(x, y): append_ovpn_remote_config(x, ports, proto)
 
-
-# Get OVPN certificates and private keys
-r = requests.get(apiUrl + "/cert", verify=ca_file.name)
-private_key = tempfile.NamedTemporaryFile(delete=False)
-public_key = tempfile.NamedTemporaryFile(delete=False)
-private_line = False
-public_line = False
-for line in r.text.split('\n'):
-    if line.startswith("-----BEGIN RSA PRIVATE KEY-----") or private_line:
-        private_line = True
-        private_key.write(line.encode() + b'\n')
-        if line.startswith("-----END RSA PRIVATE KEY-----"):
-            private_line = False
-            private_key.close()
-    elif line.startswith("-----BEGIN CERTIFICATE-----") or public_line:
-        public_line = True
-        public_key.write(line.encode() + b'\n')
-        if line.startswith("-----END CERTIFICATE-----"):
-            public_line = False
-            public_key.close()
-
 # Verify if server isn't doing something malicious and finalize OpenVPN configuration
 # Source for verify: https://0xacab.org/leap/bitmask-vpn/-/blob/main/helpers/bitmask-root#L140
 ALLOWED_FLAGS = {
@@ -223,19 +203,41 @@ for x in ovpn_config:
                 ovpn_config_new.append(x)
             else:
                 fail_after_parse = True
-                print("ERROR: FORBIDDEN PARAM OPTION %s ON %s PARAM %s!" % (x, a, y))
+                print ("Error: forbidden param option %s on %s param %s!" % (x, a, y), file=sys.stderr)
             a += 1
     else:
         fail_after_parse = True
         if y not in notice_shown:
-            print("ERROR: FORBIDDEN PARAM %s!" % (y))
+            print ("Error: forbidden param %s!" % (y), file=sys.stderr)
             notice_shown.append(y)
 if fail_after_parse:
-    print("ERROR: FOR YOUR OWN SAFETY, THIS SCRIPT WILL ABORT!")
+    print ("Error: for your own safety, the script will now abort!", file=sys.stderr)
     sys.exit(1)
 else:
     ovpn_config = ovpn_config_new
     del ovpn_config_new
+print ("Info: completed final OVPN configuartion", file=sys.stderr)
+
+# Get OVPN certificates and private keys
+r = requests.get(apiUrl + "/cert", verify=ca_file.name)
+private_key = tempfile.NamedTemporaryFile(delete=False)
+public_key = tempfile.NamedTemporaryFile(delete=False)
+private_line = False
+public_line = False
+for line in r.text.split('\n'):
+    if line.startswith("-----BEGIN RSA PRIVATE KEY-----") or private_line:
+        private_line = True
+        private_key.write(line.encode() + b'\n')
+        if line.startswith("-----END RSA PRIVATE KEY-----"):
+            private_line = False
+            private_key.close()
+    elif line.startswith("-----BEGIN CERTIFICATE-----") or public_line:
+        public_line = True
+        public_key.write(line.encode() + b'\n')
+        if line.startswith("-----END CERTIFICATE-----"):
+            public_line = False
+            public_key.close()
+print ("Info: retrived client public and private keys", file=sys.stderr)
 
 ovpn_config += [
     "--nobind",
@@ -257,15 +259,22 @@ if not args.dont_drop:
     no_group = get_no_group_name()
     if no_group is not None: ovpn_config += [ '--group', no_group ]
 
+print ("Info: OVPN Starting…", file=sys.stderr)
 openvpn = subprocess.Popen(["openvpn"] + ovpn_config, stdout=subprocess.PIPE)
+print ("Info: OVPN Started!", file=sys.stderr)
+print ("Info: OVPN Connecting…", file=sys.stderr)
 for line in io.TextIOWrapper(openvpn.stdout, encoding="utf-8"):
     line = line.rstrip('\n')
-    try:
-        tundev = re.findall("TUN/TAP device ([\S]*) opened", line)[0]
-    except:
-        pass
-    if "tundev" in globals() and tundev is not None:
-        resolvconf = subprocess.Popen(["resolvconf", "-x", "-a", tundev], stdout=subprocess.DEVNULL, stdin=subprocess.PIPE)
-        resolvconf.communicate(input=b'nameserver 10.41.0.1\nnameserver 10.42.0.1\n')
-        break
+    if "tundev" not in globals() or tundev is None:
+        try:
+            tundev = re.findall("TUN/TAP device ([\S]*) opened", line)[0]
+            resolvconf = subprocess.Popen(["resolvconf", "-x", "-a", tundev], stdout=subprocess.DEVNULL, stdin=subprocess.PIPE)
+            resolvconf.communicate(input=b'nameserver 10.41.0.1\nnameserver 10.42.0.1\n')
+        except:
+            pass
+    if len(re.findall(" Initialization Sequence Completed", line)) > 0:
+        print ("Info: OVPN Connected!", file=sys.stderr)
+    elif len(re.findall("  Inactivity timeout \(.*\), restarting", line)) > 0:
+        print ("Info: OVPN Reconnecting…", file=sys.stderr)
+    # TODO: Add more statuses, maybe find them online? or do it myself?
 openvpn.wait()
