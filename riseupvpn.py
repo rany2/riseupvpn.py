@@ -43,7 +43,7 @@ for program in ['openvpn','resolvconf']:
 if unsatisfied_dependency: sys.exit(1)
 
 # Handle cleanup
-def cleanup():
+def cleanup(sysexit=False):
     # Delete temporary files
     if "ca_file" in globals() and ca_file.name is not None: os.unlink(ca_file.name)
     if "public_key" in globals() and public_key.name is not None: os.unlink(public_key.name)
@@ -59,6 +59,10 @@ def cleanup():
             openvpn.wait(timeout=1)
         except subprocess.TimeoutExpired:
             openvpn.kill()
+
+    if sysexit:
+        atexit.unregister(cleanup)
+        sys.exit()
 atexit.register(cleanup)
 
 # Get API certificate for RiseupVPN
@@ -261,6 +265,7 @@ if not args.dont_drop:
 
 print ("Info: OVPN Starting…", file=sys.stderr)
 openvpn = subprocess.Popen(["openvpn"] + ovpn_config, stdout=subprocess.PIPE)
+ovpn_terminate = False
 print ("Info: OVPN Started!", file=sys.stderr)
 print ("Info: OVPN Connecting…", file=sys.stderr)
 for line in io.TextIOWrapper(openvpn.stdout, encoding="utf-8"):
@@ -272,9 +277,16 @@ for line in io.TextIOWrapper(openvpn.stdout, encoding="utf-8"):
             resolvconf.communicate(input=b'nameserver 10.41.0.1\nnameserver 10.42.0.1\n')
         except:
             pass
-    if len(re.findall(" Initialization Sequence Completed", line)) > 0:
+    if len(re.findall(" Initialization Sequence Completed$", line)) > 0:
         print ("Info: OVPN Connected!", file=sys.stderr)
-    elif len(re.findall("  Inactivity timeout \(.*\), restarting", line)) > 0:
-        print ("Info: OVPN Reconnecting…", file=sys.stderr)
-    # TODO: Add more statuses, maybe find them online? or do it myself?
+    elif len(re.findall(", restarting$", line)) > 0:
+        if args.dont_drop:
+            print ("Info: OVPN Reconnecting…", file=sys.stderr)
+        else:
+            ovpn_terminate = True
+    if ovpn_terminate:
+        # We need to terminate if we are dont_drop, this because when we become nobody
+        # we could no longer add gateway to route and start having issues
+        print ("Info: OVPN Terminated!", file=sys.stderr)
+        cleanup(True) # True = sys.exit()
 openvpn.wait()
