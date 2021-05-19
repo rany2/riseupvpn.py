@@ -191,3 +191,6 @@ for line in io.TextIOWrapper(openvpn.stdout, encoding="utf-8"):
     if tundev != None:
         resolvconf = subprocess.Popen(["resolvconf", "-x", "-a", tundev], stdout=subprocess.DEVNULL, stdin=subprocess.PIPE)
         resolvconf.communicate(input=b'nameserver 10.41.0.1\nnameserver 10.42.0.1\n')
+        break
+openvpn.wait()
+terminator(0, 0)
