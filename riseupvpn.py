@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
 
-# To use over some proxy for initial connection, use ALL_PROXY as the requests module actually has support for it.
-# So you will be able to get access to API that will then allow you to connect to the VPN.
-# (OpenVPN connection won't be over the proxy)
-
-# To use with Calyx, run with "--geoip-url none" and "--provider-url https://calyx.net/provider.json"
-
 import io
 import os
 import re
@@ -39,7 +33,7 @@ def terminator(signo, stack_frame, auto=True):
     os.unlink(private_key.name)
 
     # If tundev is set we remove resolvconf entry
-    if tundev is not None: subprocess.Popen(["resolvconf", "-x", tundev], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if tundev is not None: subprocess.Popen(["resolvconf", "-d", tundev], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # Exit everything if executed by signal
     if auto: sys.exit()
