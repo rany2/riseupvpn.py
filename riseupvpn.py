@@ -189,7 +189,7 @@ PARAM_FORMATS = {
     "CIPHER": lambda s: re.match("^[A-Z0-9-]+$", s)
 }
 ovpn_config_new = []
-notice_shown = None
+notice_shown = []
 fail_after_parse = False
 for x in ovpn_config:
     if x.startswith("--"):
@@ -207,15 +207,13 @@ for x in ovpn_config:
                 ovpn_config_new.append(x)
             else:
                 fail_after_parse = True
-                if notice_shown != x:
-                    print("ERROR: FORBIDDEN PARAM OPTION %s ON %s PARAM %s!" % (x, a, y))
-                    notice_shown = x
+                print("ERROR: FORBIDDEN PARAM OPTION %s ON %s PARAM %s!" % (x, a, y))
             a += 1
     else:
         fail_after_parse = True
-        if notice_shown != y:
+        if y not in notice_shown:
             print("ERROR: FORBIDDEN PARAM %s!" % (y))
-            notice_shown = y
+            notice_shown.append(y)
 if fail_after_parse:
     print("ERROR: FOR YOUR OWN SAFETY, THIS SCRIPT WILL ABORT!")
     sys.exit(1)
