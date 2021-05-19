@@ -113,16 +113,11 @@ def blacklist_check(x, y):
             for y in args.blacklist.split(" "):
                 if y == country:
                     return False
-                else:
-                    return True
         if args.whitelist is not None:
             for y in args.whitelist.split(" "):
                 if y != country:
                     return False
-                else:
-                    return True
-    else:
-        return True
+    return True
 
 # Append OpenVPN configuration for remote
 def append_ovpn_remote_config(x, ports, proto):
