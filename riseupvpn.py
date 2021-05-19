@@ -83,12 +83,15 @@ else:
 r = requests.get(apiUrl + "/config/eip-service.json", verify=ca_file.name)
 eip_service = json.loads(r.content)
 if args.list_gateway:
-    gw_list = []
-    for x in eip_service['gateways']:
-        for y in x['capabilities']['transport']:
-            if y['type'] != "openvpn": break
-            gw_list += [ "%s %s %s" % (eip_service['locations'][x['location']]['country_code'], x['location'], x['host']) ]
-    for x in sorted(gw_list): print(x)
+    if apiVersion == "3":
+        gw_list = []
+        for x in eip_service['gateways']:
+            for y in x['capabilities']['transport']:
+                if y['type'] != "openvpn": break
+                gw_list += [ "%s %s %s" % (eip_service['locations'][x['location']]['country_code'], x['location'], x['host']) ]
+        for x in sorted(gw_list): print(x)
+    else:
+        print("apiVersion %s is not supported for --list-gateway" % apiVersion)
     terminator(0, 0)
 
 # Make OpenVPN cmdline
