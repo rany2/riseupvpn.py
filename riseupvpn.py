@@ -99,33 +99,48 @@ for x in eip_service['openvpn_configuration']:
     else:
         ovpn_config += [ '--' + x ] + eip_service['openvpn_configuration'][x].split(" ")
 
+# Blacklist/Whitelist detection function
+def blacklist_check(x, y):
+    if (args.blacklist or args.whitelist) is not None:
+        country = eip_service['locations'][x['location']]['country_code']
+        if args.blacklist is not None:
+            for y in args.blacklist.split(" "):
+                if y == country:
+                    return False
+                else:
+                    return True
+        if args.whitelist is not None:
+            for y in args.whitelist.split(" "):
+                if y != country:
+                    return False
+                else:
+                    return True
+    else:
+        return True
+
+# Append OpenVPN configuration for remote
+def append_ovpn_remote_config(x, ports, proto):
+    global ovpn_config
+    ovpn_config += [ '--remote', x['ip_address'], ports, proto ]
+
 # Prepare final OpenVPN configuration
 for gateway in gateways:
     for x in eip_service['gateways']:
         if x['host'] == gateway or gateway == "none":
-            hasOVPN = False
             if apiVersion == "3":
                 for y in x['capabilities']['transport']:
-                    if y['type'] == "openvpn":
-                        ports = y['ports'][0]
-                        proto = y['protocols'][0]
-                        hasOVPN = True
+                    if y['type'] != "openvpn": continue
+                    for z in range(len(y['ports'])):
+                        ports = y['ports'][z]
+                        proto = y['protocols'][z]
+                        if blacklist_check(x, y): append_ovpn_remote_config(x, ports, proto)
             else: # apiVersion 1 support
                 for y in range(len(x['capabilities']['ports'])):
                     if x['capabilities']['transport'][y] != "openvpn": continue
                     ports = x['capabilities']['ports'][y]
                     proto = x['capabilities']['protocols'][y]
-                    hasOVPN = True
-            if (args.blacklist or args.whitelist) is not None:
-                country = eip_service['locations'][x['location']]['country_code']
-                if args.blacklist is not None:
-                    for y in args.blacklist.split(" "):
-                        if y == country: hasOVPN = False
-                if args.whitelist is not None:
-                    for y in args.whitelist.split(" "):
-                        if y != country: hasOVPN = False
-            if hasOVPN: ovpn_config += [ '--remote', x['ip_address'], ports, proto ]
-            if gateway != "none": break
+                    if blacklist_check(x, y): append_ovpn_remote_config(x, ports, proto)
+
 
 # Get OVPN certificates and private keys
 r = requests.get(apiUrl + "/cert", verify=ca_file.name)
