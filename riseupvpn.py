@@ -28,6 +28,7 @@ parser.add_argument('-l', '--list-gateway', help='lists gateways available', act
 parser.add_argument('-G', '--geoip-url', help='sets geoip-url (to unset, use none) (default https://api.black.riseup.net:9001/json)', default='https://api.black.riseup.net:9001/json')
 parser.add_argument('-a', '--provider-url', help='sets provider url (default https://black.riseup.net/provider.json)', default="https://black.riseup.net/provider.json")
 parser.add_argument('-R', '--dont-drop', help='don\'t drop OpenVPN to nobody user', action='store_true')
+parser.add_argument('-i', '--interface', help='custom interface name, useful for fws')
 args = parser.parse_args()
 
 # Check for dependencies
@@ -272,7 +273,6 @@ print ("Info: retrieved client public and private keys", file=sys.stderr)
 ovpn_config += [
     "--nobind",
     "--client",
-    "--dev", "tun",
     "--tls-client",
     "--remote-cert-tls", "server",
     "--script-security", "0",
@@ -288,6 +288,10 @@ if not args.dont_drop:
     ovpn_config += [ "--user", "nobody" ]
     no_group = get_no_group_name()
     if no_group is not None: ovpn_config += [ '--group', no_group ]
+if args.interface is None:
+    ovpn_config += [ "--dev", "tun" ]
+else:
+    ovpn_config += [ "--dev-type", "tun", "--dev", args.interface ]
 
 print ("Info: OVPN Starting…", file=sys.stderr)
 openvpn = subprocess.Popen(["openvpn"] + ovpn_config, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
