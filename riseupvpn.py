@@ -7,6 +7,7 @@ import sys
 import grp
 import json
 import atexit
+import signal
 import socket
 import argparse
 import requests
@@ -43,14 +44,24 @@ for program in ['openvpn','resolvconf']:
 if unsatisfied_dependency: sys.exit(1)
 
 # Handle cleanup
-def cleanup(sysexit=False):
+def cleanup(signo=None, frame=None):
+    # If CTRL-C we give a newline to make status info clearer
+    if type(signo) is int and signal.SIGINT.value == signo: print()
+
     # Delete temporary files
     if "ca_file" in globals() and ca_file.name is not None: os.unlink(ca_file.name)
     if "public_key" in globals() and public_key.name is not None: os.unlink(public_key.name)
     if "private_key" in globals() and private_key.name is not None: os.unlink(private_key.name)
 
     # If tundev is set we remove resolvconf entry
-    if "tundev" in globals(): subprocess.Popen(["resolvconf", "-d", tundev], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if "tundev" in globals():
+        resolvconf2 = subprocess.Popen(["resolvconf", "-d", tundev], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        resolvconf2.wait()
+        # systemd-resolvconf behaves differently so we need to check for those lines.
+        if ( ("Failed to resolve interface \"" and "\": No such device") in resolvconf2.stderr.read().decode()) or resolvconf2.returncode == 0:
+            print ("Info: successfully unset VPN DNS!", file=sys.stderr)
+        else:
+            print ("Error: failure at unsetting VPN DNS!", file=sys.stderr)
 
     # If OpenVPN was started
     if "openvpn" in globals():
@@ -59,11 +70,14 @@ def cleanup(sysexit=False):
             openvpn.wait(timeout=1)
         except subprocess.TimeoutExpired:
             openvpn.kill()
+        print ("Info: OVPN terminated!", file=sys.stderr)
 
-    if sysexit:
-        atexit.unregister(cleanup)
-        sys.exit()
+    # Unregister atexit as this was already run and sys.exit
+    atexit.unregister(cleanup)
+    sys.exit()
 atexit.register(cleanup)
+signal.signal(signal.SIGINT, cleanup)
+signal.signal(signal.SIGTERM, cleanup)
 
 # Get API certificate for RiseupVPN
 r = requests.get(args.provider_url)
@@ -102,7 +116,7 @@ def is_valid_address(value):
 # Get list of gateways to be used (based on GeoIP, eip order, or specified by user)
 if args.gateway is not None:
     gateways = args.gateway.split(" ")
-elif args.geoip_url != "none":
+elif args.geoip_url != "none" and not args.list_gateway:
     r = requests.get(args.geoip_url, verify=ca_file.name)
     gateways = json.loads(r.content)['gateways']
     print ("Info: retrieved gateway list based on GeoIP preference", file=sys.stderr)
@@ -275,6 +289,10 @@ for line in io.TextIOWrapper(openvpn.stdout, encoding="utf-8"):
             tundev = re.findall("TUN/TAP device ([\S]*) opened", line)[0]
             resolvconf = subprocess.Popen(["resolvconf", "-x", "-a", tundev], stdout=subprocess.DEVNULL, stdin=subprocess.PIPE)
             resolvconf.communicate(input=b'nameserver 10.41.0.1\nnameserver 10.42.0.1\n')
+            if resolvconf.returncode == 0:
+                print ("Info: successfully set VPN DNS!", file=sys.stderr)
+            else:
+                print ("Error: failed at setting VPN DNS!", file=sys.stderr)
         except:
             pass
     if len(re.findall(" Initialization Sequence Completed$", line)) > 0:
@@ -287,6 +305,5 @@ for line in io.TextIOWrapper(openvpn.stdout, encoding="utf-8"):
     if ovpn_terminate:
         # We need to terminate if we are dont_drop, this because when we become nobody
         # we could no longer add gateway to route and start having issues
-        print ("Info: OVPN Terminated!", file=sys.stderr)
-        cleanup(True) # True = sys.exit()
+        cleanup()
 openvpn.wait()
