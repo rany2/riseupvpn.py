@@ -27,7 +27,7 @@ parser.add_argument('-g', '--gateway', help='which gateway to use (delimited by 
 parser.add_argument('-l', '--list-gateway', help='lists gateways available', action='store_true')
 parser.add_argument('-G', '--geoip-url', help='sets geoip-url (to unset, use none) (default https://api.black.riseup.net:9001/json)', default='https://api.black.riseup.net:9001/json')
 parser.add_argument('-a', '--provider-url', help='sets provider url (default https://black.riseup.net/provider.json)', default="https://black.riseup.net/provider.json")
-parser.add_argument('-R', '--dont-drop', help="don\'t drop OpenVPN to nobody user", action='store_true')
+parser.add_argument('-R', '--dont-drop', help='don\'t drop OpenVPN to nobody user', action='store_true')
 args = parser.parse_args()
 
 # Check for dependencies
@@ -43,15 +43,22 @@ for program in ['openvpn','resolvconf']:
         unsatisfied_dependency = True
 if unsatisfied_dependency: sys.exit(1)
 
+# rm -f in python, try to delete but don't fail no matter what
+def rmf_file(file):
+    try:
+        os.unlink(file)
+    except:
+        pass
+
 # Handle cleanup
 def cleanup(signo=None, frame=None):
     # If CTRL-C we give a newline to make status info clearer
-    if type(signo) is int and signal.SIGINT.value == signo: print()
+    if type(signo) is int and signal.SIGINT.value == signo: print(file=sys.stderr)
 
     # Delete temporary files
-    if "ca_file" in globals() and ca_file.name is not None: os.unlink(ca_file.name)
-    if "public_key" in globals() and public_key.name is not None: os.unlink(public_key.name)
-    if "private_key" in globals() and private_key.name is not None: os.unlink(private_key.name)
+    if "ca_file" in globals() and ca_file.name is not None: rmf_file(ca_file.name)
+    if "public_key" in globals() and public_key.name is not None: rmf_file(public_key.name)
+    if "private_key" in globals() and private_key.name is not None: rmf_file(private_key.name)
 
     # If tundev is set we remove resolvconf entry
     if "tundev" in globals():
@@ -72,7 +79,7 @@ def cleanup(signo=None, frame=None):
             openvpn.kill()
         print ("Info: OVPN terminated!", file=sys.stderr)
 
-    # Unregister atexit as this was already run and sys.exit
+    # Unregister atexit as this was already run and then do sys.exit
     atexit.unregister(cleanup)
     sys.exit()
 atexit.register(cleanup)
@@ -80,6 +87,7 @@ signal.signal(signal.SIGINT, cleanup)
 signal.signal(signal.SIGTERM, cleanup)
 
 # Get API certificate for RiseupVPN
+print ("Info: retrieving API certificate", file=sys.stderr)
 r = requests.get(args.provider_url)
 provider = json.loads(r.content)
 cacertURL = provider['ca_cert_uri']
@@ -117,6 +125,7 @@ def is_valid_address(value):
 if args.gateway is not None:
     gateways = args.gateway.split(" ")
 elif args.geoip_url != "none" and not args.list_gateway:
+    print ("Info: retrieving gateway list based on GeoIP preference", file=sys.stderr)
     r = requests.get(args.geoip_url, verify=ca_file.name)
     gateways = json.loads(r.content)['gateways']
     print ("Info: retrieved gateway list based on GeoIP preference", file=sys.stderr)
@@ -125,6 +134,7 @@ else:
 
 # Grab EIP Service JSON
 r = requests.get(apiUrl + "/config/eip-service.json", verify=ca_file.name)
+print ("Info: retrieving EIP Service JSON", file=sys.stderr)
 eip_service = json.loads(r.content)
 print ("Info: retrieved EIP Service JSON", file=sys.stderr)
 if args.list_gateway:
@@ -203,7 +213,6 @@ PARAM_FORMATS = {
     "CIPHER": lambda s: re.match("^[A-Z0-9-]+$", s)
 }
 ovpn_config_new = []
-notice_shown = []
 fail_after_parse = False
 for x in ovpn_config:
     if x.startswith("--"):
@@ -225,9 +234,7 @@ for x in ovpn_config:
             a += 1
     else:
         fail_after_parse = True
-        if y not in notice_shown:
-            print ("Error: forbidden param %s!" % (y), file=sys.stderr)
-            notice_shown.append(y)
+        print ("Error: forbidden param %s!" % (y), file=sys.stderr)
 if fail_after_parse:
     print ("Error: for your own safety, the script will now abort!", file=sys.stderr)
     sys.exit(1)
