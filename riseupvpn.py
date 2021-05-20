@@ -43,6 +43,18 @@ for program in ['openvpn','resolvconf']:
         unsatisfied_dependency = True
 if unsatisfied_dependency: sys.exit(1)
 
+# Function to set DNS to use VPN's servers
+def set_dns(dev, unset=False):
+    if unset:
+        resolvconf = subprocess.Popen(["resolvconf", "-d", dev], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        prefix = "un"
+    else:
+        resolvconf = subprocess.Popen(["resolvconf", "-x", "-a", dev], stdout=subprocess.DEVNULL, stdin=subprocess.PIPE)
+        resolvconf.communicate(input=b'nameserver 10.41.0.1\nnameserver 10.42.0.1\n')
+        prefix = ""
+    resolvconf.wait()
+    print ("Info: %sset VPN DNS!" % prefix, file=sys.stderr)
+
 # rm -f in python, try to delete but don't fail no matter what
 def rmf_file(file):
     try:
@@ -53,7 +65,7 @@ def rmf_file(file):
 # Handle cleanup
 def cleanup(signo=None, frame=None):
     # If CTRL-C we give a newline to make status info clearer
-    if type(signo) is int and signal.SIGINT.value == signo: print(file=sys.stderr)
+    if type(signo) is int and signal.SIGINT.value == signo: print (file=sys.stderr)
 
     # Delete temporary files
     if "ca_file" in globals() and ca_file.name is not None: rmf_file(ca_file.name)
@@ -61,14 +73,7 @@ def cleanup(signo=None, frame=None):
     if "private_key" in globals() and private_key.name is not None: rmf_file(private_key.name)
 
     # If tundev is set we remove resolvconf entry
-    if "tundev" in globals():
-        resolvconf2 = subprocess.Popen(["resolvconf", "-d", tundev], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        resolvconf2.wait()
-        # systemd-resolvconf behaves differently so we need to check for those lines.
-        if ( ("Failed to resolve interface \"" and "\": No such device") in resolvconf2.stderr.read().decode()) or resolvconf2.returncode == 0:
-            print ("Info: successfully unset VPN DNS!", file=sys.stderr)
-        else:
-            print ("Error: failure at unsetting VPN DNS!", file=sys.stderr)
+    if "tundev" in globals(): set_dns(tundev, unset=True)
 
     # If OpenVPN was started
     if "openvpn" in globals():
@@ -87,7 +92,7 @@ signal.signal(signal.SIGINT, cleanup)
 signal.signal(signal.SIGTERM, cleanup)
 
 # Get API certificate for RiseupVPN
-print ("Info: retrieving API certificate", file=sys.stderr)
+print ("Info: retrieving API certificate…", file=sys.stderr)
 r = requests.get(args.provider_url)
 provider = json.loads(r.content)
 cacertURL = provider['ca_cert_uri']
@@ -97,7 +102,7 @@ r = requests.get(cacertURL)
 ca_file = tempfile.NamedTemporaryFile(delete=False)
 ca_file.write(r.content)
 ca_file.close()
-print ("Info: retrieved API certificate", file=sys.stderr)
+print ("Info: retrieved API certificate!", file=sys.stderr)
 
 # Get proper group for nobody
 # https://0xacab.org/leap/bitmask-vpn/-/blob/main/helpers/bitmask-root#L62
@@ -125,18 +130,18 @@ def is_valid_address(value):
 if args.gateway is not None:
     gateways = args.gateway.split(" ")
 elif args.geoip_url != "none" and not args.list_gateway:
-    print ("Info: retrieving gateway list based on GeoIP preference", file=sys.stderr)
+    print ("Info: retrieving gateway list based on GeoIP preference…", file=sys.stderr)
     r = requests.get(args.geoip_url, verify=ca_file.name)
     gateways = json.loads(r.content)['gateways']
-    print ("Info: retrieved gateway list based on GeoIP preference", file=sys.stderr)
+    print ("Info: retrieved gateway list based on GeoIP preference!", file=sys.stderr)
 else:
     gateways = ['none']
 
 # Grab EIP Service JSON
 r = requests.get(apiUrl + "/config/eip-service.json", verify=ca_file.name)
-print ("Info: retrieving EIP Service JSON", file=sys.stderr)
+print ("Info: retrieving EIP Service JSON…", file=sys.stderr)
 eip_service = json.loads(r.content)
-print ("Info: retrieved EIP Service JSON", file=sys.stderr)
+print ("Info: retrieved EIP Service JSON!", file=sys.stderr)
 if args.list_gateway:
     if apiVersion == "3":
         gw_list = []
@@ -262,7 +267,7 @@ for line in r.text.split('\n'):
         if line.startswith("-----END CERTIFICATE-----"):
             public_line = False
             public_key.close()
-print ("Info: retrived client public and private keys", file=sys.stderr)
+print ("Info: retrieved client public and private keys", file=sys.stderr)
 
 ovpn_config += [
     "--nobind",
@@ -285,7 +290,7 @@ if not args.dont_drop:
     if no_group is not None: ovpn_config += [ '--group', no_group ]
 
 print ("Info: OVPN Starting…", file=sys.stderr)
-openvpn = subprocess.Popen(["openvpn"] + ovpn_config, stdout=subprocess.PIPE)
+openvpn = subprocess.Popen(["openvpn"] + ovpn_config, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
 ovpn_terminate = False
 print ("Info: OVPN Started!", file=sys.stderr)
 print ("Info: OVPN Connecting…", file=sys.stderr)
@@ -294,23 +299,20 @@ for line in io.TextIOWrapper(openvpn.stdout, encoding="utf-8"):
     if "tundev" not in globals() or tundev is None:
         try:
             tundev = re.findall("TUN/TAP device ([\S]*) opened", line)[0]
-            resolvconf = subprocess.Popen(["resolvconf", "-x", "-a", tundev], stdout=subprocess.DEVNULL, stdin=subprocess.PIPE)
-            resolvconf.communicate(input=b'nameserver 10.41.0.1\nnameserver 10.42.0.1\n')
-            if resolvconf.returncode == 0:
-                print ("Info: successfully set VPN DNS!", file=sys.stderr)
-            else:
-                print ("Error: failed at setting VPN DNS!", file=sys.stderr)
         except:
             pass
     if len(re.findall(" Initialization Sequence Completed$", line)) > 0:
         print ("Info: OVPN Connected!", file=sys.stderr)
+        # We need to run every time OVPN Connected because of systemd-resolvconf.
+        # It clears DNS settings for the interface after the interface goes down.
+        set_dns (tundev)
     elif len(re.findall(", restarting$", line)) > 0:
         if args.dont_drop:
             print ("Info: OVPN Reconnecting…", file=sys.stderr)
         else:
             ovpn_terminate = True
-    if ovpn_terminate:
-        # We need to terminate if we are dont_drop, this because when we become nobody
-        # we could no longer add gateway to route and start having issues
-        cleanup()
+
+    # We need to terminate if we are not args.dont_drop, this because when we become nobody
+    # we could no longer add the VPN gateway to route and that makes it impossible to connect.
+    if ovpn_terminate: cleanup()
 openvpn.wait()
