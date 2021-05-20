@@ -20,19 +20,20 @@ fi
 action=$1
 uid=$2
 interface=$3
+chain=RVPN$uid
 shift 3
 
 for x in '' 6
 do
 	if [ "$action" == "down" ]
 	then
-		sudo ip${x}tables -D OUTPUT -j RiseupVPN
-		sudo ip${x}tables -F RiseupVPN
-		sudo ip${x}tables --delete-chain RiseupVPN
+		sudo ip${x}tables -D OUTPUT -j $chain
+		sudo ip${x}tables -F $chain
+		sudo ip${x}tables --delete-chain $chain
 	else
-		sudo ip${x}tables -N RiseupVPN
-		sudo ip${x}tables -I RiseupVPN ! -o lo+ -m owner --uid-owner $uid -j REJECT
-		sudo ip${x}tables -I RiseupVPN -o $interface -m owner --uid-owner $uid -j ACCEPT
+		sudo ip${x}tables -N $chain
+		sudo ip${x}tables -I $chain ! -o lo+ -m owner --uid-owner $uid -j REJECT
+		sudo ip${x}tables -I $chain -o $interface -m owner --uid-owner $uid -j ACCEPT
 		if [ "$x" == "6" ]
 		then
 			for address in "$@"
@@ -40,7 +41,7 @@ do
 				if [[ "$address" =~ ^\[ ]]
 				then
 					address=$(sed -e 's/^\[//g' -e 's/\]$//g' <<<"$address")
-					sudo ip${x}tables -I RiseupVPN -d "$address" -j ACCEPT
+					sudo ip${x}tables -I $chain -d "$address" -m owner --uid-owner $uid -j ACCEPT
 				fi
 			done
 		else
@@ -48,10 +49,10 @@ do
 			do
 				if ! [[ "$address" =~ ^\[ ]]
 				then
-					sudo ip${x}tables -I RiseupVPN -d "$address" -j ACCEPT
+					sudo ip${x}tables -I $chain -d "$address" -m owner --uid-owner $uid -j ACCEPT
 				fi
 			done
 		fi
-		sudo ip${x}tables -I OUTPUT -j RiseupVPN
+		sudo ip${x}tables -I OUTPUT -j $chain
 	fi
 done
