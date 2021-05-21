@@ -1,0 +1,15 @@
+# Sample firewall systemd service
+# Modify ExecStart as you wish
+
+[Unit]
+Description=RiseupVPN FW
+After=network.target network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=riseupvpn-fw.sh up 1000 riseupvpn 192.168.0.0/24 [200::/7]
+ExecStop=riseupvpn-fw.sh down 1000
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target

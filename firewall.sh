@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-
-# Example usage:
-# ./firewall.sh up
-# ./firewall.sh down
-# ./firewall.sh up 1000
-needed=3
+[ "$1" == "down" ] && needed=2 || needed=3
 if [ $# -lt $needed ]
 then
 	cat <<-EOF
@@ -12,8 +7,8 @@ then
 
 	Example usage:
 	 $0 up 1000 tun1 192.168.0.0/24 [200::/7]
-	 $0 down 1000 tunriseupvpn
-	 $0 up 1000 tunriseupvpn
+	 $0 down 1000
+	 $0 up 1000 riseupvpn
 	EOF
 	exit 0
 fi
