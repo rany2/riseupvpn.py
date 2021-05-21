@@ -21,8 +21,8 @@ if __name__ != "__main__": sys.exit(1)
 # Parse options
 parser = argparse.ArgumentParser(description="RiseupVPN Python Edition")
 group = parser.add_mutually_exclusive_group()
-group.add_argument('-b', '--blacklist', help='blacklists country (delimited by space)')
-group.add_argument('-w', '--whitelist', help='whitelists country (delimited by space)')
+group.add_argument('-b', '--blacklist', help='blacklists country or gateway (delimited by space)')
+group.add_argument('-w', '--whitelist', help='whitelists country or gateway (delimited by space)')
 parser.add_argument('-g', '--gateway', help='which gateway to use (delimited by space) (default use GeoIP, if GeoIP unavailable uses json order of eip)')
 parser.add_argument('-l', '--list-gateway', help='lists gateways available', action='store_true')
 parser.add_argument('-G', '--geoip-url', help='sets geoip-url (to unset, use none) (default https://api.black.riseup.net:9001/json)', default='https://api.black.riseup.net:9001/json')
@@ -170,12 +170,13 @@ for x in eip_service['openvpn_configuration']:
 def blacklist_check(x, y):
     if (args.blacklist or args.whitelist) is not None:
         country = eip_service['locations'][x['location']]['country_code'].lower()
+        host = x['host']
         if args.blacklist is not None:
             for y in args.blacklist.split(" "):
-                if y.lower() == country: return False
+                if y.lower() == country or y.lower() == host: return False
         if args.whitelist is not None:
             for y in args.whitelist.split(" "):
-                if y.lower() != country: return False
+                if y.lower() != country or y.lower() != host: return False
     return True
 
 # Append OpenVPN configuration for remote
